@@ -76,8 +76,6 @@ const getFeeSort = (sortBy, order) => {
 
   return {
     [safeSortBy]: sortOrder,
-
-    // Stable secondary sorting
     ...(safeSortBy !== 'createdAt'
       ? { createdAt: -1 }
       : {})
@@ -205,7 +203,6 @@ const createFee = async (req, res, next) => {
             .toUpperCase()
         : generateReceiptNumber();
 
-    // Check duplicate receipt
     const existingReceipt =
       await Fee.findOne({
         receiptNumber: receipt
@@ -219,6 +216,15 @@ const createFee = async (req, res, next) => {
       );
     }
 
+    const remainingAmount = Math.max(0, payable - numPaid);
+
+    let calculatedStatus = 'PENDING';
+    if (remainingAmount === 0 && payable > 0) {
+      calculatedStatus = 'PAID';
+    } else if (numPaid > 0 && remainingAmount > 0) {
+      calculatedStatus = 'PARTIAL';
+    }
+
     const fee = await Fee.create({
       student: studentId,
       feeType,
@@ -227,25 +233,29 @@ const createFee = async (req, res, next) => {
       amount: numAmount,
       discount: numDiscount,
       paidAmount: numPaid,
+      remainingAmount,
+      status: calculatedStatus,
       paymentMethod,
       date: feeDate,
       notes: notes || '',
-      receivedBy: req.user._id
+      receivedBy: req.user?._id || undefined
     });
 
-    await logAction({
-      user: req.user._id,
-      action: 'FEE_CREATED',
-      entity: 'Fee',
-      entityId: fee._id.toString(),
-      details: {
-        studentId,
-        receiptNumber: fee.receiptNumber,
-        amount: numAmount,
-        paidAmount: numPaid
-      },
-      ip: req.ip
-    });
+    if (req.user?._id) {
+      await logAction({
+        user: req.user._id,
+        action: 'FEE_CREATED',
+        entity: 'Fee',
+        entityId: fee._id.toString(),
+        details: {
+          studentId,
+          receiptNumber: fee.receiptNumber,
+          amount: numAmount,
+          paidAmount: numPaid
+        },
+        ip: req.ip
+      });
+    }
 
     return ApiResponse.success(
       res,
@@ -286,9 +296,6 @@ const getFees = async (req, res, next) => {
 
     const query = {};
 
-    /**
-     * Student filter
-     */
     if (studentId) {
       if (!isValidObjectId(studentId)) {
         return ApiResponse.error(
@@ -301,17 +308,11 @@ const getFees = async (req, res, next) => {
       query.student = studentId;
     }
 
-    /**
-     * Fee type filter
-     */
     if (feeType) {
       query.feeType =
         feeType.trim().toUpperCase();
     }
 
-    /**
-     * Month filter
-     */
     if (month && month.trim()) {
       query.month = new RegExp(
         escapeRegex(month.trim()),
@@ -319,25 +320,16 @@ const getFees = async (req, res, next) => {
       );
     }
 
-    /**
-     * Status filter
-     */
     if (status) {
       query.status =
         status.trim().toUpperCase();
     }
 
-    /**
-     * Payment method filter
-     */
     if (paymentMethod) {
       query.paymentMethod =
         paymentMethod.trim().toUpperCase();
     }
 
-    /**
-     * Date range filter
-     */
     if (startDate || endDate) {
       query.date = {};
 
@@ -386,17 +378,6 @@ const getFees = async (req, res, next) => {
       }
     }
 
-    /**
-     * Search
-     *
-     * Search by:
-     * - receipt number
-     * - student name
-     * - admission number
-     * - roll number
-     * - parent name
-     * - parent phone
-     */
     if (search && search.trim()) {
       const searchRegex =
         new RegExp(
@@ -430,10 +411,6 @@ const getFees = async (req, res, next) => {
           (student) => student._id
         );
 
-      /**
-       * Search can match either:
-       * receipt number OR student information.
-       */
       query.$or = [
         {
           receiptNumber: searchRegex
@@ -556,7 +533,7 @@ const getFeeById = async (
 };
 
 /**
- * @desc    Update fee record
+ * @desc    Update fee record & auto-calculate balance/status
  * @route   PUT /api/fees/:id
  * @access  Private (Admin)
  */
@@ -685,10 +662,6 @@ const updateFee = async (
         numPaid;
     }
 
-    /**
-     * Validate final financial values
-     * after applying all updates.
-     */
     const finalAmount =
       Number(fee.amount) || 0;
 
@@ -727,6 +700,18 @@ const updateFee = async (
       );
     }
 
+    // Auto calculate remaining and updated status
+    const remainingAmount = Math.max(0, finalPayable - finalPaid);
+    fee.remainingAmount = remainingAmount;
+
+    if (remainingAmount === 0 && finalPayable > 0) {
+      fee.status = 'PAID';
+    } else if (finalPaid > 0 && remainingAmount > 0) {
+      fee.status = 'PARTIAL';
+    } else {
+      fee.status = 'PENDING';
+    }
+
     if (
       paymentMethod !== undefined
     ) {
@@ -762,33 +747,38 @@ const updateFee = async (
       fee.date = feeDate;
     }
 
-    fee.receivedBy =
-      req.user._id;
+    if (req.user?._id) {
+      fee.receivedBy = req.user._id;
+    }
 
     await fee.save();
 
-    await logAction({
-      user: req.user._id,
-      action: 'FEE_UPDATED',
-      entity: 'Fee',
-      entityId: id,
-      details: {
-        receiptNumber:
-          fee.receiptNumber,
-        paidAmount:
-          fee.paidAmount,
-        remainingAmount:
-          fee.remainingAmount
-      },
-      ip: req.ip
-    });
+    const populatedFee = await Fee.findById(fee._id)
+      .populate('student', 'name admissionNo rollNo className section parentName parentPhone')
+      .populate('receivedBy', 'name email role');
+
+    if (req.user?._id) {
+      await logAction({
+        user: req.user._id,
+        action: 'FEE_UPDATED',
+        entity: 'Fee',
+        entityId: id,
+        details: {
+          receiptNumber: fee.receiptNumber,
+          paidAmount: fee.paidAmount,
+          remainingAmount: fee.remainingAmount,
+          status: fee.status
+        },
+        ip: req.ip
+      });
+    }
 
     return ApiResponse.success(
       res,
       200,
       'Fee record updated successfully',
       {
-        fee
+        fee: populatedFee || fee
       }
     );
   } catch (error) {
@@ -830,18 +820,20 @@ const deleteFee = async (
 
     await Fee.findByIdAndDelete(id);
 
-    await logAction({
-      user: req.user._id,
-      action: 'FEE_DELETED',
-      entity: 'Fee',
-      entityId: id,
-      details: {
-        receiptNumber:
-          fee.receiptNumber,
-        amount: fee.amount
-      },
-      ip: req.ip
-    });
+    if (req.user?._id) {
+      await logAction({
+        user: req.user._id,
+        action: 'FEE_DELETED',
+        entity: 'Fee',
+        entityId: id,
+        details: {
+          receiptNumber:
+            fee.receiptNumber,
+          amount: fee.amount
+        },
+        ip: req.ip
+      });
+    }
 
     return ApiResponse.success(
       res,
@@ -908,9 +900,6 @@ const getFeesByStudent = async (
       student: studentId
     };
 
-    /**
-     * Date range
-     */
     if (startDate || endDate) {
       query.date = {};
 
@@ -969,9 +958,6 @@ const getFeesByStudent = async (
       }
     }
 
-    /**
-     * Status filter
-     */
     if (status) {
       query.status =
         status
@@ -979,9 +965,6 @@ const getFeesByStudent = async (
           .toUpperCase();
     }
 
-    /**
-     * Fee type filter
-     */
     if (feeType) {
       query.feeType =
         feeType
@@ -989,9 +972,6 @@ const getFeesByStudent = async (
           .toUpperCase();
     }
 
-    /**
-     * Payment method filter
-     */
     if (paymentMethod) {
       query.paymentMethod =
         paymentMethod
@@ -1021,11 +1001,6 @@ const getFeesByStudent = async (
       Fee.countDocuments(query)
     ]);
 
-    /**
-     * Financial summary should be
-     * calculated from ALL matching
-     * records, not only current page.
-     */
     const allFees =
       await Fee.find(query).select(
         'amount discount paidAmount remainingAmount'
@@ -1126,9 +1101,6 @@ const getFeeSummary = async (
 
     const match = {};
 
-    /**
-     * Date filter
-     */
     if (startDate || endDate) {
       match.date = {};
 
@@ -1187,9 +1159,6 @@ const getFeeSummary = async (
       }
     }
 
-    /**
-     * Optional filters
-     */
     if (feeType) {
       match.feeType =
         feeType
@@ -1219,23 +1188,18 @@ const getFeeSummary = async (
         {
           $group: {
             _id: null,
-
             totalBilled: {
               $sum: '$amount'
             },
-
             totalDiscount: {
               $sum: '$discount'
             },
-
             totalCollected: {
               $sum: '$paidAmount'
             },
-
             totalPending: {
               $sum: '$remainingAmount'
             },
-
             totalTransactions: {
               $sum: 1
             }
@@ -1251,15 +1215,12 @@ const getFeeSummary = async (
         {
           $group: {
             _id: '$status',
-
             count: {
               $sum: 1
             },
-
             totalPaid: {
               $sum: '$paidAmount'
             },
-
             totalRemaining: {
               $sum: '$remainingAmount'
             }
@@ -1304,4 +1265,3 @@ module.exports = {
   getFeesByStudent,
   getFeeSummary
 };
-
