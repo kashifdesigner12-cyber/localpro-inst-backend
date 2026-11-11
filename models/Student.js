@@ -42,7 +42,16 @@ const studentSchema = new mongoose.Schema(
 
     gender: {
       type: String,
-      default: 'Male'
+      trim: true,
+      default: 'Male',
+      set: function (val) {
+        if (!val) return 'Male';
+        const clean = String(val).trim().toLowerCase();
+        if (clean === 'female' || clean === 'f' || clean.startsWith('female')) return 'Female';
+        if (clean === 'other' || clean === 'o' || clean.startsWith('other')) return 'Other';
+        if (clean === 'male' || clean === 'm' || clean.startsWith('male')) return 'Male';
+        return 'Male';
+      }
     },
 
     status: {

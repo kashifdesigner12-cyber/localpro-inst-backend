@@ -33,18 +33,18 @@ const getDashboardSummary = async (req, res, next) => {
       recentStudents = []
     ] = await Promise.all([
       // 1. Total Active Students
-      Student.countDocuments({ status: { $ne: 'DELETED' } }).catch(() => 0),
+      Student.countDocuments({ status: { $nin: ['DELETED', 'Deleted', 'deleted'] } }).catch(() => 0),
 
-      // 2. Male Students Count (Regex matches Male, MALE, male)
+      // 2. Male Students Count (Regex matches Male, MALE, male, M, m)
       Student.countDocuments({
-        status: { $ne: 'DELETED' },
-        gender: { $regex: /^male$/i }
+        status: { $nin: ['DELETED', 'Deleted', 'deleted'] },
+        gender: { $regex: /^(male|m)/i }
       }).catch(() => 0),
 
-      // 3. Female Students Count (Regex matches Female, FEMALE, female)
+      // 3. Female Students Count (Regex matches Female, FEMALE, female, F, f)
       Student.countDocuments({
-        status: { $ne: 'DELETED' },
-        gender: { $regex: /^female$/i }
+        status: { $nin: ['DELETED', 'Deleted', 'deleted'] },
+        gender: { $regex: /^(female|f)/i }
       }).catch(() => 0),
 
       // 4. Total Active Staff

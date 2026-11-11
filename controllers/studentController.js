@@ -19,8 +19,9 @@ const escapeRegex = (value) => {
 const formatGender = (value) => {
   if (!value) return 'Male';
   const clean = String(value).trim().toLowerCase();
-  if (clean === 'female' || clean === 'f') return 'Female';
-  if (clean === 'other' || clean === 'o') return 'Other';
+  if (clean === 'female' || clean === 'f' || clean.startsWith('female')) return 'Female';
+  if (clean === 'other' || clean === 'o' || clean.startsWith('other')) return 'Other';
+  if (clean === 'male' || clean === 'm' || clean.startsWith('male')) return 'Male';
   return 'Male';
 };
 
@@ -496,8 +497,8 @@ const updateStudent = async (req, res, next) => {
       updates.rollNo = String(updates.rollNo).trim();
     }
 
-    if (updates.gender !== undefined) {
-      updates.gender = formatGender(updates.gender);
+    if (updates.gender !== undefined || req.body?.Gender !== undefined) {
+      updates.gender = formatGender(updates.gender !== undefined ? updates.gender : req.body.Gender);
     }
 
     if (updates.status !== undefined) {
