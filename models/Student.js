@@ -4,22 +4,21 @@ const studentSchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: [true, 'Student name is required'],
-      trim: true
+      trim: true,
+      default: 'Student'
     },
 
     admissionNo: {
       type: String,
-      required: [true, 'Admission number is required'],
-      unique: true,
       trim: true,
-      uppercase: true
+      uppercase: true,
+      default: () => `ADM-${Date.now().toString().slice(-6)}`
     },
 
     className: {
       type: String,
-      required: [true, 'Course/Class name is required'],
-      trim: true
+      trim: true,
+      default: 'General'
     },
 
     courseDuration: {
@@ -30,9 +29,9 @@ const studentSchema = new mongoose.Schema(
 
     section: {
       type: String,
-      required: [true, 'Section / Timing is required'],
       trim: true,
-      uppercase: true
+      uppercase: true,
+      default: 'MORNING'
     },
 
     rollNo: {
@@ -43,23 +42,15 @@ const studentSchema = new mongoose.Schema(
 
     gender: {
       type: String,
-      enum: {
-        values: ['MALE', 'FEMALE', 'OTHER', 'Male', 'Female', 'Other'],
-        message: '{VALUE} is not valid. Allowed: Male, Female, Other'
-      },
       default: 'Male'
     },
 
     status: {
       type: String,
-      enum: {
-        values: ['ACTIVE', 'INACTIVE', 'Active', 'Inactive'],
-        message: '{VALUE} is not valid. Allowed: Active, Inactive'
-      },
       default: 'Active'
     },
 
-    // Student CNIC & ID Card Picture (Required on admission)
+    // Student CNIC & ID Card Picture
     cnic: {
       type: String,
       trim: true,
@@ -85,20 +76,20 @@ const studentSchema = new mongoose.Schema(
       {
         type: {
           type: String,
-          required: true,
-          trim: true
+          trim: true,
+          default: ''
         },
 
         name: {
           type: String,
-          required: true,
-          trim: true
+          trim: true,
+          default: ''
         },
 
         fileUrl: {
           type: String,
-          required: true,
-          trim: true
+          trim: true,
+          default: ''
         },
 
         mimeType: {
@@ -115,11 +106,17 @@ const studentSchema = new mongoose.Schema(
 
     parentName: {
       type: String,
-      required: [true, 'Parent/Guardian name is required'],
-      trim: true
+      trim: true,
+      default: ''
     },
 
     parentPhone: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+
+    parentWhatsApp: {
       type: String,
       trim: true,
       default: ''
@@ -155,8 +152,7 @@ const studentSchema = new mongoose.Schema(
 
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: true
+      ref: 'User'
     }
   },
   {

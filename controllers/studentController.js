@@ -45,24 +45,12 @@ const createStudent = async (req, res, next) => {
       admissionDate
     } = req.body || {};
 
-    if (
-      !name ||
-      !admissionNo ||
-      !className ||
-      !section ||
-      !parentName
-    ) {
-      return ApiResponse.error(
-        res,
-        400,
-        'Please provide all required fields: name, admissionNo, className, section, parentName'
-      );
-    }
+    // Auto-generate admission number if not provided
+    const normalizedAdmissionNo = admissionNo && String(admissionNo).trim()
+      ? String(admissionNo).trim().toUpperCase()
+      : `ADM-${Date.now().toString().slice(-6)}`;
 
-    const normalizedAdmissionNo = String(admissionNo)
-      .trim()
-      .toUpperCase();
-
+    // Duplicate check only if admissionNo was actually sent
     const existingStudent = await Student.findOne({
       admissionNo: normalizedAdmissionNo
     });
@@ -75,7 +63,7 @@ const createStudent = async (req, res, next) => {
       );
     }
 
-    // Photo extraction (Supports both req.files.photo and req.file)
+    // Photo extraction (Supports req.files.photo, req.file, or req.body.photo)
     let photoPath = '';
     if (req.files?.photo?.[0]) {
       photoPath = `/uploads/students/${req.files.photo[0].filename}`;
@@ -85,28 +73,30 @@ const createStudent = async (req, res, next) => {
       photoPath = String(req.body.photo).trim();
     }
 
-    // ID Card extraction (Supports req.files.idCard and req.body.idCardPhoto)
+    // ID Card extraction (Supports req.files.idCard, req.files.idCardPhoto, or base64 body)
     let idCardPath = '';
     if (req.files?.idCard?.[0]) {
       idCardPath = `/uploads/students/${req.files.idCard[0].filename}`;
+    } else if (req.files?.idCardPhoto?.[0]) {
+      idCardPath = `/uploads/students/${req.files.idCardPhoto[0].filename}`;
     } else if (req.body?.idCardPhoto) {
       idCardPath = String(req.body.idCardPhoto).trim();
     }
 
     const student = await Student.create({
-      name: String(name).trim(),
+      name: name && String(name).trim() ? String(name).trim() : 'Student',
 
       admissionNo: normalizedAdmissionNo,
 
-      className: String(className).trim(),
+      className: className && String(className).trim() ? String(className).trim() : 'General',
 
       courseDuration: courseDuration
         ? String(courseDuration).trim()
         : '3 Months',
 
-      section: String(section)
-        .trim()
-        .toUpperCase(),
+      section: section && String(section).trim()
+        ? String(section).trim().toUpperCase()
+        : 'MORNING',
 
       rollNo: rollNo
         ? String(rollNo).trim()
@@ -128,7 +118,7 @@ const createStudent = async (req, res, next) => {
 
       idCardPhoto: idCardPath,
 
-      parentName: String(parentName).trim(),
+      parentName: parentName && String(parentName).trim() ? String(parentName).trim() : '',
 
       parentPhone: parentPhone
         ? String(parentPhone).trim()
@@ -154,21 +144,23 @@ const createStudent = async (req, res, next) => {
         ? new Date(admissionDate)
         : Date.now(),
 
-      createdBy: req.user._id
+      createdBy: req.user?._id || undefined
     });
 
-    await logAction({
-      user: req.user._id,
-      action: 'STUDENT_CREATED',
-      entity: 'Student',
-      entityId: student._id.toString(),
-      details: {
-        admissionNo: student.admissionNo,
-        name: student.name,
-        className: student.className
-      },
-      ip: req.ip
-    });
+    if (req.user?._id) {
+      await logAction({
+        user: req.user._id,
+        action: 'STUDENT_CREATED',
+        entity: 'Student',
+        entityId: student._id.toString(),
+        details: {
+          admissionNo: student.admissionNo,
+          name: student.name,
+          className: student.className
+        },
+        ip: req.ip
+      });
+    }
 
     return ApiResponse.success(
       res,
@@ -563,14 +555,16 @@ const updateStudent = async (req, res, next) => {
         'name email role'
       );
 
-    await logAction({
-      user: req.user._id,
-      action: 'STUDENT_UPDATED',
-      entity: 'Student',
-      entityId: id,
-      details: updates,
-      ip: req.ip
-    });
+    if (req.user?._id) {
+      await logAction({
+        user: req.user._id,
+        action: 'STUDENT_UPDATED',
+        entity: 'Student',
+        entityId: id,
+        details: updates,
+        ip: req.ip
+      });
+    }
 
     return ApiResponse.success(
       res,
@@ -617,17 +611,19 @@ const deleteStudent = async (req, res, next) => {
 
     await Student.findByIdAndDelete(id);
 
-    await logAction({
-      user: req.user._id,
-      action: 'STUDENT_DELETED',
-      entity: 'Student',
-      entityId: id,
-      details: {
-        admissionNo: student.admissionNo,
-        name: student.name
-      },
-      ip: req.ip
-    });
+    if (req.user?._id) {
+      await logAction({
+        user: req.user._id,
+        action: 'STUDENT_DELETED',
+        entity: 'Student',
+        entityId: id,
+        details: {
+          admissionNo: student.admissionNo,
+          name: student.name
+        },
+        ip: req.ip
+      });
+    }
 
     return ApiResponse.success(
       res,
@@ -733,21 +729,23 @@ const addStudentDocument = async (req, res, next) => {
         student.documents.length - 1
       ];
 
-    await logAction({
-      user: req.user._id,
-      action: 'STUDENT_DOCUMENT_ADDED',
-      entity: 'Student',
-      entityId: id,
-      details: {
-        documentId:
-          addedDocument._id.toString(),
-        documentType:
-          addedDocument.type,
-        fileName:
-          addedDocument.name
-      },
-      ip: req.ip
-    });
+    if (req.user?._id) {
+      await logAction({
+        user: req.user._id,
+        action: 'STUDENT_DOCUMENT_ADDED',
+        entity: 'Student',
+        entityId: id,
+        details: {
+          documentId:
+            addedDocument._id.toString(),
+          documentType:
+            addedDocument.type,
+          fileName:
+            addedDocument.name
+        },
+        ip: req.ip
+      });
+    }
 
     return ApiResponse.success(
       res,
@@ -880,14 +878,16 @@ const deleteStudentDocument = async (
 
     await student.save();
 
-    await logAction({
-      user: req.user._id,
-      action: 'STUDENT_DOCUMENT_DELETED',
-      entity: 'Student',
-      entityId: id,
-      details: documentDetails,
-      ip: req.ip
-    });
+    if (req.user?._id) {
+      await logAction({
+        user: req.user._id,
+        action: 'STUDENT_DOCUMENT_DELETED',
+        entity: 'Student',
+        entityId: id,
+        details: documentDetails,
+        ip: req.ip
+      });
+    }
 
     return ApiResponse.success(
       res,
