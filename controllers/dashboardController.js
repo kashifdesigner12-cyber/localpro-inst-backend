@@ -9,7 +9,6 @@ const Attendance = require('../models/Attendance');
 const Fee = require('../models/Fee');
 const Transaction = require('../models/Transaction');
 const ApiResponse = require('../utils/apiResponse');
-const { sanitizeDateOnly } = require('../utils/validators');
 
 /**
  * @desc    Get aggregated dashboard statistics for admin
@@ -18,24 +17,26 @@ const { sanitizeDateOnly } = require('../utils/validators');
  */
 const getDashboardSummary = async (req, res, next) => {
   try {
-    const today = sanitizeDateOnly(new Date());
+    // Robust start & end of day computation (zero reliance on external helper)
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // Parallel aggregate queries for high performance
+    // Parallel aggregate queries with safe fallbacks
     const [
-      totalStudents,
-      totalStaff,
-      todayAttendanceStats,
-      feeStats,
-      transactionStats,
-      recentStudents
+      totalStudents = 0,
+      totalStaff = 0,
+      todayAttendanceStats = [],
+      feeStats = [],
+      transactionStats = [],
+      recentStudents = []
     ] = await Promise.all([
       // 1. Total Active Students
-      Student.countDocuments({ status: 'ACTIVE' }),
+      Student.countDocuments({ status: { $ne: 'DELETED' } }).catch(() => 0),
 
       // 2. Total Active Staff
-      Staff.countDocuments({ status: 'ACTIVE' }),
+      Staff.countDocuments({ status: { $ne: 'DELETED' } }).catch(() => 0),
 
       // 3. Today's Attendance Aggregation
       Attendance.aggregate([
@@ -50,7 +51,7 @@ const getDashboardSummary = async (req, res, next) => {
             count: { $sum: 1 }
           }
         }
-      ]),
+      ]).catch(() => []),
 
       // 4. Overall Fee Aggregation
       Fee.aggregate([
@@ -62,7 +63,7 @@ const getDashboardSummary = async (req, res, next) => {
             pendingFees: { $sum: '$remainingAmount' }
           }
         }
-      ]),
+      ]).catch(() => []),
 
       // 5. Overall Transactions Aggregation
       Transaction.aggregate([
@@ -72,13 +73,15 @@ const getDashboardSummary = async (req, res, next) => {
             total: { $sum: '$amount' }
           }
         }
-      ]),
+      ]).catch(() => []),
 
       // 6. Recent Students List (10 most recent)
       Student.find()
         .sort({ createdAt: -1 })
         .limit(10)
-        .select('name admissionNo className section rollNo parentName parentPhone status createdAt')
+        .select('name firstName lastName admissionNo className section rollNo parentName parentPhone status createdAt')
+        .lean()
+        .catch(() => [])
     ]);
 
     // Process Today's Attendance
@@ -87,40 +90,46 @@ const getDashboardSummary = async (req, res, next) => {
     let lateToday = 0;
     let leaveToday = 0;
 
-    todayAttendanceStats.forEach((stat) => {
-      if (stat._id === 'PRESENT') presentToday = stat.count;
-      else if (stat._id === 'ABSENT') absentToday = stat.count;
-      else if (stat._id === 'LATE') lateToday = stat.count;
-      else if (stat._id === 'LEAVE') leaveToday = stat.count;
-    });
+    if (Array.isArray(todayAttendanceStats)) {
+      todayAttendanceStats.forEach((stat) => {
+        const status = (stat?._id || '').toUpperCase();
+        if (status === 'PRESENT') presentToday = stat.count || 0;
+        else if (status === 'ABSENT') absentToday = stat.count || 0;
+        else if (status === 'LATE') lateToday = stat.count || 0;
+        else if (status === 'LEAVE') leaveToday = stat.count || 0;
+      });
+    }
 
     const totalMarkedToday = presentToday + absentToday + lateToday + leaveToday;
 
     // Process Fee Stats
-    const feeData = feeStats[0] || { totalFees: 0, totalCollected: 0, pendingFees: 0 };
+    const feeData = (feeStats && feeStats[0]) || { totalFees: 0, totalCollected: 0, pendingFees: 0 };
 
     // Process Transaction Stats
     let totalIncome = 0;
     let totalExpense = 0;
 
-    transactionStats.forEach((t) => {
-      if (t._id === 'INCOME') totalIncome = t.total;
-      else if (t._id === 'EXPENSE') totalExpense = t.total;
-    });
+    if (Array.isArray(transactionStats)) {
+      transactionStats.forEach((t) => {
+        const type = (t?._id || '').toUpperCase();
+        if (type === 'INCOME') totalIncome = t.total || 0;
+        else if (type === 'EXPENSE') totalExpense = t.total || 0;
+      });
+    }
 
     const balance = totalIncome - totalExpense;
 
     // Format recent students cleanly
-    const formattedRecentStudents = recentStudents.map((s) => ({
+    const formattedRecentStudents = (recentStudents || []).map((s) => ({
       id: s._id,
-      name: s.name,
-      admissionNo: s.admissionNo,
-      className: s.className,
-      section: s.section,
-      rollNo: s.rollNo,
-      parentName: s.parentName,
-      parentPhone: s.parentPhone,
-      status: s.status,
+      name: s.name || `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'N/A',
+      admissionNo: s.admissionNo || '',
+      className: s.className || '',
+      section: s.section || '',
+      rollNo: s.rollNo || '',
+      parentName: s.parentName || '',
+      parentPhone: s.parentPhone || '',
+      status: s.status || 'ACTIVE',
       createdAt: s.createdAt
     }));
 
@@ -136,16 +145,23 @@ const getDashboardSummary = async (req, res, next) => {
         late: lateToday,
         leave: leaveToday
       },
-      totalFees: feeData.totalFees,
-      totalCollected: feeData.totalCollected,
-      pendingFees: feeData.pendingFees,
+      totalFees: feeData.totalFees || 0,
+      totalCollected: feeData.totalCollected || 0,
+      pendingFees: feeData.pendingFees || 0,
       totalIncome,
       totalExpense,
       balance,
       recentStudents: formattedRecentStudents
     });
   } catch (error) {
-    next(error);
+    console.error('[Dashboard Controller Error]:', error);
+
+    // Explicit fallback response taake CORS header drop na ho aur frontend crash na ho
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve dashboard metrics.',
+      error: error.message
+    });
   }
 };
 

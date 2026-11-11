@@ -37,20 +37,11 @@ const ApiResponse = require("../utils/apiResponse");
 // ==================================================
 
 router.get("/health", (req, res) => {
-  const isDatabaseConnected =
-    mongoose.connection.readyState === 1;
+  const isDatabaseConnected = mongoose.connection.readyState === 1;
 
-  const dbStatus = isDatabaseConnected
-    ? "connected"
-    : "disconnected";
-
-  const status = isDatabaseConnected
-    ? "healthy"
-    : "unhealthy";
-
-  const statusCode = isDatabaseConnected
-    ? 200
-    : 503;
+  const dbStatus = isDatabaseConnected ? "connected" : "disconnected";
+  const status = isDatabaseConnected ? "healthy" : "unhealthy";
+  const statusCode = isDatabaseConnected ? 200 : 503;
 
   return ApiResponse.success(
     res,
@@ -68,165 +59,25 @@ router.get("/health", (req, res) => {
 });
 
 // ==================================================
-// AUTH
-// /api/auth
+// ROUTES MOUNTING
 // ==================================================
 
-router.use(
-  "/auth",
-  authRoutes
-);
-
-router.use("/performance", performanceRoutes);
+router.use("/auth", authRoutes);
 router.use("/classes", classRoutes);
-
-// ==================================================
-// STUDENTS
-// /api/students
-// ==================================================
-
-router.use(
-  "/students",
-  studentRoutes
-);
-
-// ==================================================
-// ATTENDANCE
-// /api/attendance
-// ==================================================
-
-router.use(
-  "/attendance",
-  attendanceRoutes
-);
-
-// ==================================================
-// FEES
-// /api/fees
-// ==================================================
-
-router.use(
-  "/fees",
-  feeRoutes
-);
-
-// ==================================================
-// TRANSACTIONS
-// /api/transactions
-// ==================================================
-
-router.use(
-  "/transactions",
-  transactionRoutes
-);
-
-// ==================================================
-// STAFF
-// /api/staff
-// ==================================================
-
-router.use(
-  "/staff",
-  staffRoutes
-);
-
-// ==================================================
-// STAFF ATTENDANCE
-// /api/staff-attendance
-// ==================================================
-
-router.use(
-  "/staff-attendance",
-  staffAttendanceRoutes
-);
-
-// ==================================================
-// LEAVES
-// /api/leaves
-// ==================================================
-
-router.use(
-  "/leaves",
-  leaveRoutes
-);
-
-// ==================================================
-// EXAMS
-// /api/exams
-// ==================================================
-
-router.use(
-  "/exams",
-  examRoutes
-);
-
-// ==================================================
-// RESULTS
-// /api/results
-// ==================================================
-
-router.use(
-  "/results",
-  resultRoutes
-);
-
-// ==================================================
-// PERFORMANCE
-// /api/performance
-// ==================================================
-//
-// POST   /api/performance
-// GET    /api/performance
-// GET    /api/performance?year=2026
-// GET    /api/performance?month=2026-09
-// GET    /api/performance/student/:studentId
-//
-// ==================================================
-
-router.use(
-  "/performance",
-  performanceRoutes
-);
-
-// ==================================================
-// DASHBOARD
-// /api/dashboard
-// ==================================================
-
-router.use(
-  "/dashboard",
-  dashboardRoutes
-);
-
-// ==================================================
-// REPORTS
-// /api/reports
-// ==================================================
-
-router.use(
-  "/reports",
-  reportRoutes
-);
-
-// ==================================================
-// NOTIFICATIONS
-// /api/notifications
-// ==================================================
-
-router.use(
-  "/notifications",
-  notificationRoutes
-);
-
-// ==================================================
-// SETTINGS
-// /api/settings
-// ==================================================
-
-router.use(
-  "/settings",
-  settingsRoutes
-);
+router.use("/students", studentRoutes);
+router.use("/attendance", attendanceRoutes);
+router.use("/fees", feeRoutes);
+router.use("/transactions", transactionRoutes);
+router.use("/staff", staffRoutes);
+router.use("/staff-attendance", staffAttendanceRoutes);
+router.use("/leaves", leaveRoutes);
+router.use("/exams", examRoutes);
+router.use("/results", resultRoutes);
+router.use("/performance", performanceRoutes);
+router.use("/dashboard", dashboardRoutes);
+router.use("/reports", reportRoutes);
+router.use("/notifications", notificationRoutes);
+router.use("/settings", settingsRoutes);
 
 // ==================================================
 // EXPORT
