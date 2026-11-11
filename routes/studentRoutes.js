@@ -27,7 +27,8 @@ const {
 const uploadStudentFiles = uploadStudentPhoto.fields
   ? uploadStudentPhoto.fields([
       { name: 'photo', maxCount: 1 },
-      { name: 'idCard', maxCount: 1 }
+      { name: 'idCard', maxCount: 1 },
+      { name: 'idCardPhoto', maxCount: 1 }
     ])
   : uploadStudentPhoto;
 
