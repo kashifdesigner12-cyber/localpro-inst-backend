@@ -27,6 +27,7 @@ const getDashboardSummary = async (req, res, next) => {
     const [
       totalStudents = 0,
       totalStaff = 0,
+      genderStats = [],
       todayAttendanceStats = [],
       feeStats = [],
       transactionStats = [],
@@ -38,7 +39,18 @@ const getDashboardSummary = async (req, res, next) => {
       // 2. Total Active Staff
       Staff.countDocuments({ status: { $ne: 'DELETED' } }).catch(() => 0),
 
-      // 3. Today's Attendance Aggregation
+      // 3. Gender aggregation for Students
+      Student.aggregate([
+        { $match: { status: { $ne: 'DELETED' } } },
+        {
+          $group: {
+            _id: { $toUpper: '$gender' },
+            count: { $sum: 1 }
+          }
+        }
+      ]).catch(() => []),
+
+      // 4. Today's Attendance Aggregation
       Attendance.aggregate([
         {
           $match: {
@@ -53,7 +65,7 @@ const getDashboardSummary = async (req, res, next) => {
         }
       ]).catch(() => []),
 
-      // 4. Overall Fee Aggregation
+      // 5. Overall Fee Aggregation
       Fee.aggregate([
         {
           $group: {
@@ -65,7 +77,7 @@ const getDashboardSummary = async (req, res, next) => {
         }
       ]).catch(() => []),
 
-      // 5. Overall Transactions Aggregation
+      // 6. Overall Transactions Aggregation
       Transaction.aggregate([
         {
           $group: {
@@ -75,7 +87,7 @@ const getDashboardSummary = async (req, res, next) => {
         }
       ]).catch(() => []),
 
-      // 6. Recent Students List (10 most recent)
+      // 7. Recent Students List (10 most recent)
       Student.find()
         .sort({ createdAt: -1 })
         .limit(10)
@@ -83,6 +95,21 @@ const getDashboardSummary = async (req, res, next) => {
         .lean()
         .catch(() => [])
     ]);
+
+    // Process Gender Stats
+    let maleStudents = 0;
+    let femaleStudents = 0;
+
+    if (Array.isArray(genderStats)) {
+      genderStats.forEach((g) => {
+        const genderKey = (g?._id || '').toString().trim().toUpperCase();
+        if (genderKey === 'MALE' || genderKey === 'M') {
+          maleStudents += g.count || 0;
+        } else if (genderKey === 'FEMALE' || genderKey === 'F') {
+          femaleStudents += g.count || 0;
+        }
+      });
+    }
 
     // Process Today's Attendance
     let presentToday = 0;
@@ -135,6 +162,8 @@ const getDashboardSummary = async (req, res, next) => {
 
     return ApiResponse.success(res, 200, 'Dashboard data retrieved successfully', {
       totalStudents,
+      maleStudents,
+      femaleStudents,
       totalStaff,
       presentToday,
       absentToday,
@@ -156,7 +185,6 @@ const getDashboardSummary = async (req, res, next) => {
   } catch (error) {
     console.error('[Dashboard Controller Error]:', error);
 
-    // Explicit fallback response taake CORS header drop na ho aur frontend crash na ho
     return res.status(500).json({
       success: false,
       message: 'Failed to retrieve dashboard metrics.',
