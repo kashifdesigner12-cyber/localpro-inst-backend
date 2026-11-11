@@ -17,17 +17,16 @@ const ApiResponse = require('../utils/apiResponse');
  */
 const getDashboardSummary = async (req, res, next) => {
   try {
-    // Robust start & end of day computation (zero reliance on external helper)
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // Parallel aggregate queries with safe fallbacks
     const [
       totalStudents = 0,
+      maleStudentsCount = 0,
+      femaleStudentsCount = 0,
       totalStaff = 0,
-      genderStats = [],
       todayAttendanceStats = [],
       feeStats = [],
       transactionStats = [],
@@ -36,21 +35,22 @@ const getDashboardSummary = async (req, res, next) => {
       // 1. Total Active Students
       Student.countDocuments({ status: { $ne: 'DELETED' } }).catch(() => 0),
 
-      // 2. Total Active Staff
+      // 2. Male Students Count (Regex matches Male, MALE, male)
+      Student.countDocuments({
+        status: { $ne: 'DELETED' },
+        gender: { $regex: /^male$/i }
+      }).catch(() => 0),
+
+      // 3. Female Students Count (Regex matches Female, FEMALE, female)
+      Student.countDocuments({
+        status: { $ne: 'DELETED' },
+        gender: { $regex: /^female$/i }
+      }).catch(() => 0),
+
+      // 4. Total Active Staff
       Staff.countDocuments({ status: { $ne: 'DELETED' } }).catch(() => 0),
 
-      // 3. Gender aggregation for Students
-      Student.aggregate([
-        { $match: { status: { $ne: 'DELETED' } } },
-        {
-          $group: {
-            _id: { $toUpper: '$gender' },
-            count: { $sum: 1 }
-          }
-        }
-      ]).catch(() => []),
-
-      // 4. Today's Attendance Aggregation
+      // 5. Today's Attendance Aggregation
       Attendance.aggregate([
         {
           $match: {
@@ -65,7 +65,7 @@ const getDashboardSummary = async (req, res, next) => {
         }
       ]).catch(() => []),
 
-      // 5. Overall Fee Aggregation
+      // 6. Overall Fee Aggregation
       Fee.aggregate([
         {
           $group: {
@@ -77,7 +77,7 @@ const getDashboardSummary = async (req, res, next) => {
         }
       ]).catch(() => []),
 
-      // 6. Overall Transactions Aggregation
+      // 7. Overall Transactions Aggregation
       Transaction.aggregate([
         {
           $group: {
@@ -87,31 +87,23 @@ const getDashboardSummary = async (req, res, next) => {
         }
       ]).catch(() => []),
 
-      // 7. Recent Students List (10 most recent)
+      // 8. Recent Students List (10 most recent)
       Student.find()
         .sort({ createdAt: -1 })
         .limit(10)
-        .select('name firstName lastName admissionNo className section rollNo parentName parentPhone status createdAt')
+        .select('name firstName lastName admissionNo className section rollNo gender parentName parentPhone status createdAt')
         .lean()
         .catch(() => [])
     ]);
 
-    // Process Gender Stats
-    let maleStudents = 0;
-    let femaleStudents = 0;
-
-    if (Array.isArray(genderStats)) {
-      genderStats.forEach((g) => {
-        const genderKey = (g?._id || '').toString().trim().toUpperCase();
-        if (genderKey === 'MALE' || genderKey === 'M') {
-          maleStudents += g.count || 0;
-        } else if (genderKey === 'FEMALE' || genderKey === 'F') {
-          femaleStudents += g.count || 0;
-        }
-      });
+    // Agar kisi purane student ka gender set nahi tha, toh usko male consider karein
+    let maleStudents = maleStudentsCount;
+    let femaleStudents = femaleStudentsCount;
+    if (maleStudents === 0 && femaleStudents === 0 && totalStudents > 0) {
+      maleStudents = totalStudents;
     }
 
-    // Process Today's Attendance
+    // Process Attendance
     let presentToday = 0;
     let absentToday = 0;
     let lateToday = 0;
@@ -146,7 +138,6 @@ const getDashboardSummary = async (req, res, next) => {
 
     const balance = totalIncome - totalExpense;
 
-    // Format recent students cleanly
     const formattedRecentStudents = (recentStudents || []).map((s) => ({
       id: s._id,
       name: s.name || `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'N/A',
