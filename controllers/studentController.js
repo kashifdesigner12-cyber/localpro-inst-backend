@@ -16,6 +16,14 @@ const escapeRegex = (value) => {
   );
 };
 
+const formatGender = (value) => {
+  if (!value) return 'Male';
+  const clean = String(value).trim().toLowerCase();
+  if (clean === 'female' || clean === 'f') return 'Female';
+  if (clean === 'other' || clean === 'o') return 'Other';
+  return 'Male';
+};
+
 /**
  * -----------------------------------------------------
  * Create Student
@@ -102,13 +110,11 @@ const createStudent = async (req, res, next) => {
         ? String(rollNo).trim()
         : '',
 
-      gender: gender
-        ? String(gender).trim().toUpperCase()
-        : 'MALE',
+      gender: formatGender(gender),
 
-      status: status
-        ? String(status).trim().toUpperCase()
-        : 'ACTIVE',
+      status: status && String(status).trim()
+        ? (String(status).trim().toLowerCase() === 'inactive' ? 'Inactive' : 'Active')
+        : 'Active',
 
       cnic: cnic
         ? String(cnic).trim()
@@ -227,15 +233,17 @@ const getStudents = async (req, res, next) => {
     }
 
     if (status && String(status).trim()) {
-      query.status = String(status)
-        .trim()
-        .toUpperCase();
+      query.status = new RegExp(
+        `^${escapeRegex(String(status).trim())}$`,
+        'i'
+      );
     }
 
     if (gender && String(gender).trim()) {
-      query.gender = String(gender)
-        .trim()
-        .toUpperCase();
+      query.gender = new RegExp(
+        `^${escapeRegex(String(gender).trim())}$`,
+        'i'
+      );
     }
 
     if (search && String(search).trim()) {
@@ -489,15 +497,11 @@ const updateStudent = async (req, res, next) => {
     }
 
     if (updates.gender !== undefined) {
-      updates.gender = String(updates.gender)
-        .trim()
-        .toUpperCase();
+      updates.gender = formatGender(updates.gender);
     }
 
     if (updates.status !== undefined) {
-      updates.status = String(updates.status)
-        .trim()
-        .toUpperCase();
+      updates.status = String(updates.status).trim().toLowerCase() === 'inactive' ? 'Inactive' : 'Active';
     }
 
     if (updates.cnic !== undefined) {
