@@ -159,6 +159,69 @@ const getMessagesWithUser = async (req, res, next) => {
 };
 
 /**
+ * POST /api/chat/send
+ */
+const sendMessage = async (req, res, next) => {
+  try {
+    const senderId = String(req.user._id);
+    const senderRole = String(req.user.role || 'teacher').toLowerCase();
+    const senderName = req.user.chatDisplayName || req.user.name || 'User';
+
+    const {
+      receiverId,
+      receiverRole = 'student',
+      receiverName = 'User',
+      text = '',
+      messageType = 'text',
+      task = null,
+      attachmentUrl = '',
+      attachmentName = '',
+      tempId = null
+    } = req.body || {};
+
+    if (!receiverId) {
+      return ApiResponse.error(res, 400, 'receiverId is required');
+    }
+
+    const roomId = buildRoomId(senderId, receiverId);
+
+    const savedMessage = await ChatMessage.create({
+      roomId,
+      senderId,
+      senderRole,
+      senderName,
+      receiverId: String(receiverId),
+      receiverRole: String(receiverRole || 'student').toLowerCase(),
+      receiverName: receiverName || 'User',
+      messageType,
+      text: String(text || '').trim(),
+      task: task || undefined,
+      attachmentUrl,
+      attachmentName,
+      status: 'sent'
+    });
+
+    const messageObj = {
+      ...savedMessage.toObject(),
+      tempId
+    };
+
+    const io = getIO();
+    if (io) {
+      io.to(`user_${receiverId}`).emit('receive_message', messageObj);
+      io.to(`user_${senderId}`).emit('message_sent', messageObj);
+      io.to('admin_monitor_room').emit('admin_live_message', messageObj);
+    }
+
+    return ApiResponse.success(res, 201, 'Message sent successfully', {
+      message: messageObj
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * DELETE /api/chat/message/:messageId?mode=me|everyone
  */
 const deleteMessage = async (req, res, next) => {
@@ -525,6 +588,7 @@ const uploadAttachment = async (req, res, next) => {
 module.exports = {
   getChatContacts,
   getMessagesWithUser,
+  sendMessage,
   deleteMessage,
   clearChatWithPartner,
   getAdminAllConversations,

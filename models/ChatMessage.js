@@ -1,5 +1,12 @@
 const mongoose = require('mongoose');
 
+const VALID_ROLES = ['admin', 'teacher', 'student'];
+
+const normalizeRole = (val, fallback = 'student') => {
+  const normalized = String(val || '').trim().toLowerCase();
+  return VALID_ROLES.includes(normalized) ? normalized : fallback;
+};
+
 const chatMessageSchema = new mongoose.Schema(
   {
     roomId: {
@@ -16,12 +23,14 @@ const chatMessageSchema = new mongoose.Schema(
 
     senderRole: {
       type: String,
-      enum: ['admin', 'teacher', 'student'],
-      required: true
+      enum: VALID_ROLES,
+      required: true,
+      set: (val) => normalizeRole(val, 'teacher')
     },
 
     senderName: {
       type: String,
+      trim: true,
       default: 'User'
     },
 
@@ -33,12 +42,14 @@ const chatMessageSchema = new mongoose.Schema(
 
     receiverRole: {
       type: String,
-      enum: ['admin', 'teacher', 'student'],
-      required: true
+      enum: VALID_ROLES,
+      required: true,
+      set: (val) => normalizeRole(val, 'student')
     },
 
     receiverName: {
       type: String,
+      trim: true,
       default: 'User'
     },
 
@@ -119,9 +130,20 @@ const chatMessageSchema = new mongoose.Schema(
     }
   },
   {
-    timestamps: true
+    timestamps: true,
+    minimize: false
   }
 );
+
+chatMessageSchema.pre('validate', function (next) {
+  if (this.senderRole) {
+    this.senderRole = normalizeRole(this.senderRole, 'teacher');
+  }
+  if (this.receiverRole) {
+    this.receiverRole = normalizeRole(this.receiverRole, 'student');
+  }
+  next();
+});
 
 chatMessageSchema.index({ roomId: 1, createdAt: 1 });
 chatMessageSchema.index({ senderId: 1, receiverId: 1, createdAt: -1 });

@@ -15,20 +15,34 @@ const buildRoomId = (id1, id2) => {
 let ioInstance = null;
 
 const initChatSocket = (httpServer) => {
+  const allowedSocketOrigins = [
+    config.frontendUrl,
+    'https://institute.localpro1.net',
+    'https://apinstitute.localpro1.net',
+    'https://localpro1.net',
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:5173'
+  ].filter(Boolean);
+
   ioInstance = new Server(httpServer, {
+    path: '/socket.io',
     cors: {
-      origin: [
-        config.frontendUrl,
-        'https://institute.localpro1.net',
-        'https://localpro1.net',
-        'http://localhost:3000',
-        'http://localhost:5173',
-        'http://127.0.0.1:3000',
-        'http://127.0.0.1:5173'
-      ].filter(Boolean),
+      origin: function (origin, callback) {
+        if (!origin || config.env !== 'production') {
+          return callback(null, true);
+        }
+        if (allowedSocketOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+        console.warn(`[Socket CORS] Blocked origin: ${origin}`);
+        return callback(new Error('Not allowed by Socket CORS'));
+      },
       methods: ['GET', 'POST'],
       credentials: true
     },
+    allowEIO3: true,
     pingTimeout: 60000,
     pingInterval: 25000
   });
@@ -71,6 +85,7 @@ const initChatSocket = (httpServer) => {
 
       next();
     } catch (err) {
+      console.error('[Socket Auth Error]:', err.message);
       next(new Error('Invalid socket token'));
     }
   });
@@ -79,15 +94,12 @@ const initChatSocket = (httpServer) => {
     const userId = socket.user.id;
     const userRole = socket.user.role;
 
-    // Join personal room for instant notifications
     socket.join(`user_${userId}`);
 
-    // Admins also join global monitor room so they can observe all teacher-student chats live
     if (userRole === 'admin') {
       socket.join('admin_monitor_room');
     }
 
-    // Track online status
     if (!onlineUsers.has(userId)) {
       onlineUsers.set(userId, new Set());
     }
@@ -97,10 +109,8 @@ const initChatSocket = (httpServer) => {
       await Student.findByIdAndUpdate(userId, { isOnline: true }).catch(() => {});
     }
 
-    // Broadcast updated online user IDs to everyone
     ioInstance.emit('online_users', Array.from(onlineUsers.keys()));
 
-    // Send instant message (Text, File, or Task)
     socket.on('send_message', async (payload, callback) => {
       try {
         const {
@@ -141,13 +151,8 @@ const initChatSocket = (httpServer) => {
           tempId
         };
 
-        // 1. Deliver instantly to receiver
         ioInstance.to(`user_${receiverId}`).emit('receive_message', messageObj);
-
-        // 2. Echo back to sender's other tabs/devices
         ioInstance.to(`user_${userId}`).emit('message_sent', messageObj);
-
-        // 3. Broadcast to Admin monitor room so Admin sees all chats live
         ioInstance.to('admin_monitor_room').emit('admin_live_message', messageObj);
 
         if (typeof callback === 'function') {
@@ -160,7 +165,6 @@ const initChatSocket = (httpServer) => {
       }
     });
 
-    // Live Typing Indicator
     socket.on('typing', ({ receiverId }) => {
       if (!receiverId) return;
       ioInstance.to(`user_${receiverId}`).emit('user_typing', {
@@ -176,7 +180,6 @@ const initChatSocket = (httpServer) => {
       });
     });
 
-    // Mark messages as seen (blue ticks)
     socket.on('mark_seen', async ({ senderId }) => {
       try {
         if (!senderId) return;
@@ -202,7 +205,6 @@ const initChatSocket = (httpServer) => {
       }
     });
 
-    // Handle disconnect
     socket.on('disconnect', async () => {
       const sockets = onlineUsers.get(userId);
       if (sockets) {
