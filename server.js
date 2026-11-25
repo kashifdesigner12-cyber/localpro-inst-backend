@@ -328,4 +328,6 @@ process.on('uncaughtException', (error) => {
   }, 1000);
 });
 
-module.exports = app;
+module.exports = httpServer;
+module.exports.app = app;
+module.exports.httpServer = httpServer;
